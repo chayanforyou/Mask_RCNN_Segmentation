@@ -26,7 +26,7 @@ try:
     from mrcnn import utils
 except:
     # for loading in colab
-    from Mask_RCNN.mrcnn import utils
+    from Mask_RCNN_Segmentation.mrcnn import utils
 
 # Requires TensorFlow 2.0+
 from distutils.version import LooseVersion
