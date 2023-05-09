@@ -1848,7 +1848,7 @@ class MaskRCNN():
         self.set_log_dir()
         self.keras_model = self.build(mode=mode, config=config)
 
-    def build(self, mode, config:Config):
+    def build(self, mode, config):
         """Build Mask R-CNN architecture.
             input_shape: The shape of the input image.
             mode: Either "training" or "inference". The inputs and
