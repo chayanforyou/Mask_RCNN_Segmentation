@@ -12,6 +12,7 @@ import sys
 import random
 import itertools
 import colorsys
+import io
 
 import numpy as np
 from skimage.measure import find_contours
@@ -21,15 +22,12 @@ from matplotlib.patches import Polygon
 import IPython.display
 
 # Root directory of the project
-ROOT_DIR = os.path.abspath("../../models/maskrcnn")
+ROOT_DIR = os.path.abspath("../")
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
-try:
-    from mrcnn import utils
-except:
-    # for loading in colab
-    from Mask_RCNN.mrcnn import utils
+from mrcnn import utils
+
 
 ############################################################
 #  Visualization
@@ -53,7 +51,7 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
         plt.subplot(rows, cols, i)
         plt.title(title, fontsize=9)
         plt.axis('off')
-        plt.imshow(image, cmap=cmap,
+        plt.imshow(image.astype(np.uint8), cmap=cmap,
                    norm=norm, interpolation=interpolation)
         i += 1
     plt.show()
@@ -72,7 +70,7 @@ def random_colors(N, bright=True):
     return colors
 
 
-def apply_mask(image, mask, color, alpha=0.1):
+def apply_mask(image, mask, color, alpha=0.5):
     """Apply the given mask to the image.
     """
     for c in range(3):
@@ -85,8 +83,9 @@ def apply_mask(image, mask, color, alpha=0.1):
 
 def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
-                      figsize=(16, 16), ax=None,
+                      figsize=(16, 16), figAx=None,
                       show_mask=True, show_bbox=True,
+                      show_caption=True,
                       colors=None, captions=None):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
@@ -100,9 +99,10 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     colors: (optional) An array or colors to use with each object
     captions: (optional) A list of strings to use as captions for each object
     """
+    """image copy for furthere analysis"""
+    unmaskedimage = image.copy()
     # Number of instances
     N = boxes.shape[0]
-    N_classes = len(np.unique(class_ids))
     if not N:
         print("\n*** No instances to display *** \n")
     else:
@@ -110,14 +110,14 @@ def display_instances(image, boxes, masks, class_ids, class_names,
 
     # If no axis is passed, create one and automatically call show()
     auto_show = False
-    if not ax:
-        _, ax = plt.subplots(1, figsize=figsize)
+    if not figAx:
+        fig,ax = plt.subplots(1, figsize=figsize)
         auto_show = True
+    else:
+        fig,ax = figAx
 
     # Generate random colors
-    colors = colors
-    if not colors:
-        colors = dict(zip(np.unique(class_ids), random_colors(N_classes)))
+    colors = colors or random_colors(N)
 
     # Show area outside image boundaries.
     height, width = image.shape[:2]
@@ -125,11 +125,10 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.set_xlim(-10, width + 10)
     ax.axis('off')
     ax.set_title(title)
-
-    masked_image = image.copy()
+    # print("image_size is {}".format(image.shape))
+    masked_image = image.astype(np.uint32).copy()
     for i in range(N):
-        class_id = class_ids[i]
-        color = colors[class_id]
+        color = colors[i]
 
         # Bounding box
         if not np.any(boxes[i]):
@@ -138,20 +137,21 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         y1, x1, y2, x2 = boxes[i]
         if show_bbox:
             p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
-                                alpha=0.7, linestyle="dashed",
-                                edgecolor=color, facecolor='none')
+                                   alpha=0.7, linestyle="dashed",
+                                   edgecolor=color, facecolor='none')
             ax.add_patch(p)
 
         # Label
-        
-        score = scores[i] if scores is not None else None
-        label = class_names[class_id]
-        if captions:
-            caption = captions[i]
-        else:
-            caption = "{} {:.3f}".format(label, score) if score else label
-        ax.text(x1, y1 + 8, caption,
-                color='w', size=11, backgroundcolor="b")
+        if show_caption:
+            if not captions:
+                class_id = class_ids[i]
+                score = scores[i] if scores is not None else None
+                label = class_names[class_id]
+                caption = "{} {:.3f}".format(label, score) if score else label
+            else:
+                caption = captions[i]
+            ax.text(x1, y1 + 8, caption,
+                    color='w', size=11, backgroundcolor="none")
 
         # Mask
         mask = masks[:, :, i]
@@ -169,10 +169,9 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             verts = np.fliplr(verts) - 1
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
-    ax.imshow(masked_image)
+    ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
         plt.show()
-
 
 def display_differences(image,
                         gt_box, gt_class_id, gt_mask,
@@ -187,7 +186,7 @@ def display_differences(image,
         pred_box, pred_class_id, pred_score, pred_mask,
         iou_threshold=iou_threshold, score_threshold=score_threshold)
     # Ground truth = green. Predictions = red
-    colors = [(0, 1, 0, .8)] * len(gt_match)\
+    colors = [(0, 1, 0,.8)] * len(gt_match)\
            + [(1, 0, 0, 1)] * len(pred_match)
     # Concatenate GT and predictions
     class_ids = np.concatenate([gt_class_id, pred_class_id])
@@ -270,7 +269,7 @@ def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10)
     print("Positive ROIs: ", class_ids[class_ids > 0].shape[0])
     print("Negative ROIs: ", class_ids[class_ids == 0].shape[0])
     print("Positive Ratio: {:.2f}".format(
-        class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
+                class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
 
 
 # TODO: Replace with matplotlib equivalent?
